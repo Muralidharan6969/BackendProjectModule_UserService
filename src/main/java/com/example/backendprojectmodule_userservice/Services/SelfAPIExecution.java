@@ -1,9 +1,13 @@
 package com.example.backendprojectmodule_userservice.Services;
 
+import com.example.backendprojectmodule_userservice.DTOs.UserSignUpSendEmailDTO;
 import com.example.backendprojectmodule_userservice.Models.*;
 import com.example.backendprojectmodule_userservice.Repositories.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -18,14 +22,20 @@ public class SelfAPIExecution implements UserServiceInterface {
     private UserRepository userRepository;
     private BCryptPasswordEncoder bCryptPasswordEncoder;
     private TokenRepository tokenRepository;
+    private KafkaTemplate kafkaTemplate;
+    private ObjectMapper objectMapper;
 
     @Autowired
     public SelfAPIExecution(UserRepository userRepository,
                             BCryptPasswordEncoder bCryptPasswordEncoder,
-                            TokenRepository tokenRepository) {
+                            TokenRepository tokenRepository,
+                            KafkaTemplate kafkaTemplate,
+                            ObjectMapper objectMapper) {
         this.userRepository = userRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
         this.tokenRepository = tokenRepository;
+        this.kafkaTemplate = kafkaTemplate;
+        this.objectMapper = objectMapper;
     }
     @Override
     public List<User> getAllUsers() {
@@ -53,7 +63,17 @@ public class SelfAPIExecution implements UserServiceInterface {
 //        Address a = addAddress(user.getAddress());
 //        user.setAddress(a);
         user.setPassword(bCryptPasswordEncoder.encode(user.getPassword()));
-        return userRepository.save(user);
+        User user1 = userRepository.save(user);
+        UserSignUpSendEmailDTO sendEmailDTO = new UserSignUpSendEmailDTO();
+        sendEmailDTO.setSendTo(user1.getEmail());
+        sendEmailDTO.setSubject("Welcome to our platform");
+        sendEmailDTO.setBody("Welcome to our platform. Your username is: " + user1.getUsername());
+        try {
+            kafkaTemplate.send("sendEmail", objectMapper.writeValueAsString(sendEmailDTO));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+        return user1;
     }
 
     private Address addAddress(Address address) {
